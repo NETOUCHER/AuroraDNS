@@ -20,9 +20,9 @@ namespace AuroraDNS
 
     static class Program
     {
-        private static IPAddress MyIPAddr;
-        private static ConsoleColor OriginColor;
+        private static IPAddress IntIPAddr;
         private static IPAddress LocIPAddr;
+        private static ConsoleColor OriginColor;
         private static List<DomainName> BlackList;
         private static Dictionary<DomainName, IPAddress> WhiteList;
 
@@ -37,7 +37,7 @@ namespace AuroraDNS
 
             public static IPAddress ListenIp = IPAddress.Any;
             public static IPAddress EDnsIp = IPAddress.Any;
-            public static bool EDnsPrivacy;
+            public static bool EDnsCustomize;
             public static bool ProxyEnable;
             public static bool DebugLog;
             public static bool BlackListEnable;
@@ -54,11 +54,11 @@ namespace AuroraDNS
             LocIPAddr = IPAddress.Parse(GetLocIp());
             if (Thread.CurrentThread.CurrentCulture.Name == "zh-CN")
             {
-                MyIPAddr = IPAddress.Parse(new WebClient().DownloadString("http://members.3322.org/dyndns/getip").Trim());
+                IntIPAddr = IPAddress.Parse(new WebClient().DownloadString("http://members.3322.org/dyndns/getip").Trim());
             }
             else
             {
-                MyIPAddr = IPAddress.Parse(new WebClient().DownloadString("https://api.ipify.org").Trim());
+                IntIPAddr = IPAddress.Parse(new WebClient().DownloadString("https://api.ipify.org").Trim());
             }
 
 
@@ -110,13 +110,13 @@ namespace AuroraDNS
                 Console.WriteLine(@"-------AURORA DNS-------");
 
                 Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine(DateTime.Now);
                 Console.WriteLine(@"AuroraDNS Server Running");
                 Console.ForegroundColor = OriginColor;
 
                 Console.WriteLine(@"Press any key to stop dns server");
                 Console.WriteLine(Resource.Line);
-                Console.ReadLine();
-                Console.WriteLine(Resource.Line);
+                Console.ReadKey();
             }
         }
 
@@ -126,10 +126,12 @@ namespace AuroraDNS
                 return;
 
             IPAddress clientAddress = e.RemoteEndpoint.Address;
-            if (ADnsSetting.EDnsPrivacy)
+            if (ADnsSetting.EDnsCustomize)
                 clientAddress = ADnsSetting.EDnsIp;
-            else if (Equals(clientAddress, IPAddress.Loopback) || InSameLaNet(clientAddress, LocIPAddr))
-                clientAddress = MyIPAddr;
+            else if (Equals(clientAddress, IPAddress.Loopback))
+                clientAddress = IntIPAddr;
+            else if (InSameLaNet(clientAddress, LocIPAddr) && !Equals(IntIPAddr, LocIPAddr))
+                clientAddress = IntIPAddr;
 
             DnsMessage response = query.CreateResponseInstance();
 
@@ -146,29 +148,31 @@ namespace AuroraDNS
 
                         if (ADnsSetting.DebugLog)
                         {
-                            Console.WriteLine(@"| " + clientAddress + @" : " + dnsQuestion.Name);
+                            Console.WriteLine($@"| {DateTime.Now} {clientAddress} : { dnsQuestion.Name}");
                         }
 
                         if (ADnsSetting.BlackListEnable && BlackList.Contains(dnsQuestion.Name))
                         {
-                            //BlackList
-                            ARecord blackRecord = new ARecord(dnsQuestion.Name, 10, IPAddress.Any);
-                            response.AnswerRecords.Add(blackRecord);
                             if (ADnsSetting.DebugLog)
                             {
                                 Console.WriteLine(@"|- BlackList");
                             }
+                            
+                            //BlackList
+                            response.ReturnCode = ReturnCode.NxDomain;
+                            //response.AnswerRecords.Add(new ARecord(dnsQuestion.Name, 10, IPAddress.Any));
                         }
 
                         else if (ADnsSetting.WhiteListEnable && WhiteList.ContainsKey(dnsQuestion.Name))
                         {
-                            //WhiteList
-                            ARecord blackRecord = new ARecord(dnsQuestion.Name, 10, WhiteList[dnsQuestion.Name]);
-                            response.AnswerRecords.Add(blackRecord);
                             if (ADnsSetting.DebugLog)
                             {
                                 Console.WriteLine(@"|- WhiteList");
                             }
+                            
+                            //WhiteList
+                            ARecord blackRecord = new ARecord(dnsQuestion.Name, 10, WhiteList[dnsQuestion.Name]);
+                            response.AnswerRecords.Add(blackRecord);
                         }
 
                         else
@@ -330,11 +334,11 @@ namespace AuroraDNS
 
             try
             {
-                ADnsSetting.EDnsPrivacy = configJson.AsObjectGetBool("EDnsPrivacy");
+                ADnsSetting.EDnsCustomize = configJson.AsObjectGetBool("EDnsPrivacy");
             }
             catch
             {
-                ADnsSetting.EDnsPrivacy = false;
+                ADnsSetting.EDnsCustomize = false;
             }
 
             try
@@ -348,7 +352,7 @@ namespace AuroraDNS
 
             try
             {
-                ADnsSetting.EDnsIp = IPAddress.Parse(configJson.AsObjectGetString("EDnsClient"));
+                ADnsSetting.EDnsIp = IPAddress.Parse(configJson.AsObjectGetString("EDnsClientIp"));
             }
             catch
             {
@@ -373,9 +377,9 @@ namespace AuroraDNS
             Console.WriteLine(@"WhiteList   : " + ADnsSetting.WhiteListEnable);
             Console.WriteLine(@"ProxyEnable : " + ADnsSetting.ProxyEnable);
             Console.WriteLine(@"DebugLog    : " + ADnsSetting.DebugLog);
-            Console.WriteLine(@"EDnsPrivacy : " + ADnsSetting.EDnsPrivacy);
             Console.WriteLine(@"EDnsClient  : " + ADnsSetting.EDnsIp);
             Console.WriteLine(@"HttpsDns    : " + ADnsSetting.HttpsDnsUrl);
+            Console.WriteLine(@"EDnsCustomize : " + ADnsSetting.EDnsCustomize);
 
             if (ADnsSetting.ProxyEnable)
             {
